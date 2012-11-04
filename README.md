@@ -6,7 +6,7 @@
 
 Add this line to your application's Gemfile:
 
-    gem 'uri-js-rails'
+    gem 'uri-js-rails', :group => :assets
 
 And then execute:
 
