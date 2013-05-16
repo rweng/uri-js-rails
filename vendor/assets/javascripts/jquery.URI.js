@@ -2,7 +2,7 @@
  * URI.js - Mutating URLs
  * jQuery Plugin
  *
- * Version: 1.7.4
+ * Version: 1.10.2
  *
  * Author: Rodney Rehm
  * Web: http://medialize.github.com/URI.js/jquery-uri-plugin.html
@@ -13,11 +13,53 @@
  *
  */
 
-(function($, undefined){
+(function (root, factory) {
+    // https://github.com/umdjs/umd/blob/master/returnExports.js
+    if (typeof exports === 'object') {
+        // Node
+        module.exports = factory(require('jquery', './URI'));
+    } else if (typeof define === 'function' && define.amd) {
+        // AMD. Register as an anonymous module.
+        define(['jquery', './URI'], factory);
+    } else {
+        // Browser globals (root is window)
+        factory(root.jQuery, root.URI);
+    }
+}(this, function ($, URI) {
+"use strict";
 
-var URI = typeof module !== "undefined" && module.exports
-    ? require('./URIjs')
-    : window.URI;
+var comparable = {};
+var compare = {
+    // equals 
+    '=': function(value, target) {
+        return value === target;
+    },
+    // ~= translates to value.match((?:^|\s)target(?:\s|$)) which is useless for URIs
+    // |= translates to value.match((?:\b)target(?:-|\s|$)) which is useless for URIs
+    // begins with
+    '^=': function(value, target, property) {
+        return !!(value + "").match(new RegExp('^' + escapeRegEx(target), 'i'));
+    },
+    // ends with
+    '$=': function(value, target, property) {
+        return !!(value + "").match(new RegExp(escapeRegEx(target) + '$', 'i'));
+    },
+    // contains
+    '*=': function(value, target, property) {
+        if (property == 'directory') {
+            // add trailing slash so /dir/ will match the deep-end as well
+            value += '/';
+        }
+        
+        return !!(value + "").match(new RegExp(escapeRegEx(target), 'i'));
+    },
+    'equals:': function(uri, target) {
+        return uri.equals(target);
+    },
+    'is:': function(uri, target) {
+        return uri.is(target);
+    }
+};
 
 function escapeRegEx(string) {
     // https://github.com/medialize/URI.js/commit/85ac21783c11f8ccab06106dba9735a31a86924d#commitcomment-821963
@@ -42,66 +84,55 @@ function getUriProperty(elem) {
         return undefined;
     }
     
+    if (!property) {
+        // you can set any property you wish. So for elements that don't have
+        // either of [src, href, action] we simply return src.
+        // https://github.com/medialize/URI.js/issues/69
+        return 'src';
+    }
+    
     return property;
 }
 
-var pseudo = /^([a-zA-Z]+)\s*([\^\$*]?=|:)\s*(['"]?)(.+)\3|^\s*([a-zA-Z0-9]+)\s*$/,
-    comparable = {},
-    // https://developer.mozilla.org/en/CSS/Attribute_selectors
-    compare = {
-        // equals 
-        '=': function(value, target) {
-            return value === target;
+function generateAccessor(property) {
+    return {
+        get: function(elem) {
+            return $(elem).uri()[property]();
         },
-        // ~= translates to value.match((?:^|\s)target(?:\s|$)) which is useless for URIs
-        // |= translates to value.match((?:\b)target(?:-|\s|$)) which is useless for URIs
-        // begins with
-        '^=': function(value, target, property) {
-            return !!(value + "").match(new RegExp('^' + escapeRegEx(target), 'i'));
-        },
-        // ends with
-        '$=': function(value, target, property) {
-            return !!(value + "").match(new RegExp(escapeRegEx(target) + '$', 'i'));
-        },
-        // contains
-        '*=': function(value, target, property) {
-            if (property == 'directory') {
-                // add trailing slash so /dir/ will match the deep-end as well
-                value += '/';
-            }
-            
-            return !!(value + "").match(new RegExp(escapeRegEx(target), 'i'));
-        },
-        'equals:': function(uri, target) {
-            return uri.equals(target);
-        },
-        'is:': function(uri, target) {
-            return uri.is(target);
+        set: function(elem, value) {
+            $(elem).uri()[property](value);
+            return value;
         }
-    },
-    generateAccessor = function(property) {
-        return {
-            get: function(elem) {
-                return $(elem).uri()[property]();
-            },
-            set: function(elem, value) {
-                $(elem).uri()[property](value);
-                return value;
-            }
-        };
     };
+};
 
 // populate lookup table and register $.attr('uri:accessor') handlers
-$.each('authority directory domain filename fragment hash host hostname href password path pathname port protocol query scheme search subdomain suffix tld username'.split(" "), function(k, v) {
+$.each('authority directory domain filename fragment hash host hostname href password path pathname port protocol query resource scheme search subdomain suffix tld username'.split(" "), function(k, v) {
     comparable[v] = true;
     $.attrHooks['uri:' + v] = generateAccessor(v);
 });
 
+// pipe $.attr('src') and $.attr('href') through URI.js
+var _attrHooks = {
+    get: function(elem) {
+        return $(elem).uri();
+    },
+    set: function(elem, value) {
+        return $(elem).uri().href(value).toString();
+    }
+};
+$.each(['src', 'href', 'action', 'uri'], function(k, v) {
+    $.attrHooks[v] = {
+        set: _attrHooks.set
+    };
+});
+$.attrHooks.uri.get = _attrHooks.get;
+
 // general URI accessor
 $.fn.uri = function(uri) {
-    var $this = this.first(),
-        elem = $this.get(0),
-        property = getUriProperty(elem);
+    var $this = this.first();
+    var elem = $this.get(0);
+    var property = getUriProperty(elem);
     
     if (!property) {
         throw new Error('Element "' + elem.nodeName + '" does not have either property: href, src, action');
@@ -121,7 +152,7 @@ $.fn.uri = function(uri) {
         if (uri) {
             return uri;
         } else {
-    		uri = URI($this.attr(property));
+            uri = URI($this.attr(property));
         }
     }
     
@@ -150,22 +181,20 @@ URI.prototype.build = function(deferBuild) {
     return this;
 };
 
-// :uri() pseudo-selector for $.find(), $.filter() $.is(), et al.
-$.expr.filters.uri = function(elem, index, matches) {
-    // documentation on this is scarce, look into
-    //  - https://github.com/jquery/sizzle/wiki/Sizzle-Home
-    //  - https://github.com/jquery/sizzle/blob/master/sizzle.js#L626
-
+// add :uri() pseudo class selector to sizzle
+var uriSizzle;
+var pseudoArgs = /^([a-zA-Z]+)\s*([\^\$*]?=|:)\s*(['"]?)(.+)\3|^\s*([a-zA-Z0-9]+)\s*$/;
+function uriPseudo (elem, text) {
+    var match, property, uri;
+    
     // skip anything without src|href|action and bad :uri() syntax
-    if (!getUriProperty(elem) || !matches[3]) {
+    if (!getUriProperty(elem) || !text) {
         return false;
     }
     
-    var t = matches[3].match(pseudo),
-        property,
-        uri;
+    match = text.match(pseudoArgs);
 
-    if (!t || (!t[5] && t[2] !== ':' && !compare[t[2]])) {
+    if (!match || (!match[5] && match[2] !== ':' && !compare[match[2]])) {
         // abort because the given selector cannot be executed
         // filers seem to fail silently
         return false;
@@ -173,44 +202,45 @@ $.expr.filters.uri = function(elem, index, matches) {
 
     uri = $(elem).uri();
     
-    if (t[5]) {
-        return uri.is(t[5]);
-    } else if (t[2] === ':') {
-        property = t[1].toLowerCase() + ':';
+    if (match[5]) {
+        return uri.is(match[5]);
+    } else if (match[2] === ':') {
+        property = match[1].toLowerCase() + ':';
         if (!compare[property]) {
             // filers seem to fail silently
             return false;
         }
         
-        return compare[property](uri, t[4]);
+        return compare[property](uri, match[4]);
     } else {
-        property = t[1].toLowerCase();
+        property = match[1].toLowerCase();
         if (!comparable[property]) {
             // filers seem to fail silently
             return false;
         }
         
-        return compare[t[2]](uri[property](), t[4], property);
+        return compare[match[2]](uri[property](), match[4], property);
     }
 
     return false;
-};
+}
 
-// pipe $.attr('src') and $.attr('href') through URI.js
-var _attrHooks = {
-    get: function(elem) {
-        return $(elem).uri();
-    },
-    set: function(elem, value) {
-        return $(elem).uri().href(value).toString();
-    }
-};
-$.each(['src', 'href', 'action', 'uri'], function(k, v) {
-    $.attrHooks[v] = {
-        set: _attrHooks.set
+if ($.expr.createPseudo) {
+    // jQuery >= 1.8
+    uriSizzle = $.expr.createPseudo(function (text) {
+        return function (elem) {
+            return uriPseudo(elem, text);
+        };
+    });
+} else {
+    // jQuery < 1.8
+    uriSizzle = function (elem, i, match) {
+        return uriPseudo(elem, match[3]);
     };
-});
-$.attrHooks.uri.get = _attrHooks.get;
+}
 
+$.expr[":"].uri = uriSizzle;
 
-})(jQuery);
+// extending existing object rather than defining something new
+return {};
+}));
