@@ -2,7 +2,7 @@
  * URI.js - Mutating URLs
  * jQuery Plugin
  *
- * Version: 1.10.2
+ * Version: 1.11.2
  *
  * Author: Rodney Rehm
  * Web: http://medialize.github.com/URI.js/jquery-uri-plugin.html
@@ -67,30 +67,16 @@ function escapeRegEx(string) {
 }
 
 function getUriProperty(elem) {
-    var property;
-    
-    // Note: IE9 will report img.href, so check img.src first (Issue #48)
-    $.each(['src', 'href', 'action'], function(k, v) {
-        if (v in elem ) {
-            property = v;
-            return false;
-        }
-    
-        return true;
-    });
-    
-    // compensate ambiguous <input>
-    if (elem.nodeName.toLowerCase() === 'input' && elem.type !== 'image') {
+    var nodeName = elem.nodeName.toLowerCase();
+    var property = URI.domAttributes[nodeName];
+    if (nodeName === 'input' && elem.type !== 'image') {
+        // compensate ambiguous <input> that is not an image
         return undefined;
     }
     
-    if (!property) {
-        // you can set any property you wish. So for elements that don't have
-        // either of [src, href, action] we simply return src.
-        // https://github.com/medialize/URI.js/issues/69
-        return 'src';
-    }
-    
+    // NOTE: as we use a static mapping from element to attribute,
+    // the HTML5 attribute issue should not come up again
+    // https://github.com/medialize/URI.js/issues/69
     return property;
 }
 
@@ -121,7 +107,7 @@ var _attrHooks = {
         return $(elem).uri().href(value).toString();
     }
 };
-$.each(['src', 'href', 'action', 'uri'], function(k, v) {
+$.each(['src', 'href', 'action', 'uri', 'cite'], function(k, v) {
     $.attrHooks[v] = {
         set: _attrHooks.set
     };
@@ -135,7 +121,7 @@ $.fn.uri = function(uri) {
     var property = getUriProperty(elem);
     
     if (!property) {
-        throw new Error('Element "' + elem.nodeName + '" does not have either property: href, src, action');
+        throw new Error('Element "' + elem.nodeName + '" does not have either property: href, src, action, cite');
     }
     
     if (uri !== undefined) {
@@ -145,14 +131,14 @@ $.fn.uri = function(uri) {
         }
         
         if (!(uri instanceof URI)) {
-            uri = URI(uri);
+            uri = URI(uri || '');
         }
     } else {
         uri = $this.data('uri');
         if (uri) {
             return uri;
         } else {
-            uri = URI($this.attr(property));
+            uri = URI($this.attr(property) || '');
         }
     }
     
