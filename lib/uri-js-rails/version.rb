@@ -1,7 +1,7 @@
 module Uri
   module Js
     module Rails
-      VERSION = "1.10.2"
+      VERSION = "1.11.2"
     end
   end
 end
