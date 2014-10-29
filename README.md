@@ -26,6 +26,9 @@ Add to your application.js manifest:
 
 		//= require jquery.URI
 
+**Note:** There are more files since `URI.js` `1.14.1`.  
+Check the original site/repo for the description of those new files.  
+
 
 ## Contributing
 
